@@ -15,9 +15,10 @@ body{
     font-family: Arial, Helvetica, sans-serif;
     color:#fff;
     text-align:center;
+    cursor: pointer;
 }
 
-/* TEXT */
+/* ================= TEXT ================= */
 h1{
     position:absolute;
     top:12px;
@@ -25,6 +26,13 @@ h1{
     font-size:clamp(1.8rem, 5vw, 3rem);
     letter-spacing:3px;
     text-shadow:0 0 20px #ff0080,0 0 40px #ff0080;
+    z-index:5;
+    animation: glow 2s ease-in-out infinite;
+}
+
+@keyframes glow {
+    0%, 100% { text-shadow:0 0 20px #ff0080,0 0 40px #ff0080; }
+    50% { text-shadow:0 0 30px #ff0080,0 0 60px #ff0080,0 0 80px #ff0080; }
 }
 
 #year{
@@ -35,56 +43,56 @@ h1{
     font-weight:bold;
     background: linear-gradient(90deg,#ff0,#f0f,#0ff,#0f0);
     -webkit-background-clip:text;
+    background-clip:text;
     color:transparent;
+    z-index:5;
+    animation: rainbow 3s linear infinite;
 }
 
-/* CONTROLS */
-.controls{
+@keyframes rainbow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+}
+
+/* ================= SOUND HINT ================= */
+.sound-hint{
     position:fixed;
-    bottom:15px;
-    width:100%;
-    display:flex;
-    justify-content:center;
-    gap:10px;
-    padding:0 10px;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    padding:8px 20px;
+    background:rgba(255,255,255,0.1);
+    backdrop-filter:blur(10px);
+    border-radius:20px;
+    font-size:0.85rem;
+    color:rgba(255,255,255,0.7);
     z-index:10;
-    flex-wrap:wrap;
+    animation: fadeOut 3s forwards;
 }
 
-button{
-    padding:10px 18px;
-    border:none;
-    border-radius:30px;
-    cursor:pointer;
-    font-weight:bold;
-    color:#fff;
-    background:linear-gradient(45deg,#ff0080,#ff9800);
-    transition:0.3s;
-    font-size:0.9rem;
+@keyframes fadeOut {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; pointer-events: none; }
 }
 
-button:hover{
-    transform:scale(1.1);
-    box-shadow:0 0 20px #ff0080;
-}
-
-/* CANVAS */
+/* ================= CANVAS ================= */
 canvas{
     display:block;
     width:100vw;
     height:100vh;
 }
 
-/* MOBILE */
-@media (max-width:600px){
+/* ================= MOBILE ================= */
+@media (max-width: 600px){
     #year{ top:52px; }
-    button{ flex:1 1 45%; font-size:0.85rem; }
+    .sound-hint{ font-size:0.75rem; padding:6px 15px; }
 }
 
-@media (max-height:500px){
+/* ================= SMALL DEVICES ================= */
+@media (max-height: 500px){
     h1{ top:5px; }
     #year{ top:35px; }
-    .controls{ bottom:5px; }
 }
 </style>
 </head>
@@ -96,18 +104,9 @@ canvas{
 
 <canvas id="canvas"></canvas>
 
-<div class="controls">
-    <button onclick="toggle()">Pause</button>
-    <button onclick="launch()">Add Firework</button>
-    <button onclick="launchBurst(6)">Mega Burst</button>
-    <button onclick="speedUp()">Faster</button>
-    <button onclick="slowDown()">Slower</button>
-    <button onclick="toggleSound()">Sound On/Off</button>
-    <button onclick="resetAll()">Reset</button>
-</div>
+<div class="sound-hint">🔊 Click anywhere to enable sound</div>
 
 <script>
-/* ================= CANVAS ================= */
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
@@ -118,43 +117,157 @@ function resize(){
 resize();
 window.addEventListener("resize", resize);
 
-/* ================= AUDIO ================= */
-/*
-  🔊 AAP BAAD ME PATH CHANGE KAR DENA
-  Example:
-  "sounds/firework.mp3"
-*/
-const fireSound = new Audio("firework.mpeg");
-fireSound.volume = 0.5;
-fireSound.preload = "auto";
-
-let soundOn = true;
-
-function playSound(){
-    if(!soundOn) return;
-    fireSound.currentTime = 0;
-    fireSound.play().catch(()=>{});
-}
-
-function toggleSound(){
-    soundOn = !soundOn;
-}
-
-/* Mobile autoplay unlock */
-document.addEventListener("click", () => {
-    fireSound.play().then(()=>{
-        fireSound.pause();
-        fireSound.currentTime = 0;
-    });
-}, { once:true });
-
-/* ================= FIREWORK LOGIC ================= */
 let fireworks = [];
 let particles = [];
 let gravity = 0.06;
 let speed = 1;
-let running = true;
 
+// ================= SOUND SYSTEM =================
+let audioContext = null;
+let soundEnabled = false;
+
+function initAudio(){
+    if(!audioContext){
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+// Enable sound on first click/tap
+document.body.addEventListener('click', () => {
+    if(!soundEnabled){
+        soundEnabled = true;
+        initAudio();
+    }
+}, { once: true });
+
+function playExplosionSound(){
+    if(!soundEnabled || !audioContext) return;
+    
+    const now = audioContext.currentTime;
+    
+    // Main explosion boom
+    const osc1 = audioContext.createOscillator();
+    const gain1 = audioContext.createGain();
+    const filter1 = audioContext.createBiquadFilter();
+    
+    osc1.connect(filter1);
+    filter1.connect(gain1);
+    gain1.connect(audioContext.destination);
+    
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(120, now);
+    osc1.frequency.exponentialRampToValueAtTime(30, now + 0.15);
+    
+    filter1.type = 'lowpass';
+    filter1.frequency.setValueAtTime(800, now);
+    filter1.frequency.exponentialRampToValueAtTime(100, now + 0.2);
+    
+    gain1.gain.setValueAtTime(0.5, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+    
+    osc1.start(now);
+    osc1.stop(now + 0.4);
+    
+    // Crackling sparkle effect
+    const osc2 = audioContext.createOscillator();
+    const gain2 = audioContext.createGain();
+    const filter2 = audioContext.createBiquadFilter();
+    
+    osc2.connect(filter2);
+    filter2.connect(gain2);
+    gain2.connect(audioContext.destination);
+    
+    osc2.type = 'square';
+    osc2.frequency.setValueAtTime(2000 + Math.random() * 1000, now);
+    osc2.frequency.exponentialRampToValueAtTime(500, now + 0.3);
+    
+    filter2.type = 'bandpass';
+    filter2.frequency.setValueAtTime(3000, now);
+    filter2.Q.setValueAtTime(10, now);
+    
+    gain2.gain.setValueAtTime(0.2, now);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+    
+    osc2.start(now + 0.02);
+    osc2.stop(now + 0.35);
+    
+    // White noise burst
+    const bufferSize = audioContext.sampleRate * 0.3;
+    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for(let i = 0; i < bufferSize; i++){
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+    }
+    
+    const noise = audioContext.createBufferSource();
+    const noiseGain = audioContext.createGain();
+    const noiseFilter = audioContext.createBiquadFilter();
+    
+    noise.buffer = buffer;
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(audioContext.destination);
+    
+    noiseFilter.type = 'highpass';
+    noiseFilter.frequency.setValueAtTime(1000, now);
+    
+    noiseGain.gain.setValueAtTime(0.3, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+    
+    noise.start(now);
+}
+
+function playLaunchSound(){
+    if(!soundEnabled || !audioContext) return;
+    
+    const now = audioContext.currentTime;
+    
+    // Whoosh sound with doppler effect
+    const osc = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+    
+    osc.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(60, now);
+    osc.frequency.exponentialRampToValueAtTime(400, now + 0.25);
+    
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(300, now);
+    filter.frequency.exponentialRampToValueAtTime(2000, now + 0.25);
+    filter.Q.setValueAtTime(5, now);
+    
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(0.25, now + 0.05);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+    
+    osc.start(now);
+    osc.stop(now + 0.25);
+    
+    // High-frequency whistle
+    const osc2 = audioContext.createOscillator();
+    const gain2 = audioContext.createGain();
+    
+    osc2.connect(gain2);
+    gain2.connect(audioContext.destination);
+    
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(800, now);
+    osc2.frequency.linearRampToValueAtTime(1200, now + 0.2);
+    
+    gain2.gain.setValueAtTime(0, now);
+    gain2.gain.linearRampToValueAtTime(0.12, now + 0.05);
+    gain2.gain.linearRampToValueAtTime(0, now + 0.2);
+    
+    osc2.start(now);
+    osc2.stop(now + 0.2);
+}
+
+// ================= FIREWORKS =================
 class Firework{
     constructor(){
         this.x = Math.random() * canvas.width;
@@ -162,8 +275,13 @@ class Firework{
         this.targetY = Math.random() * canvas.height * 0.4 + 80;
         this.speed = Math.random() * 3 + 6;
         this.color = `hsl(${Math.random()*360},100%,60%)`;
+        this.trail = [];
     }
     update(){
+        // Add trail effect
+        this.trail.push({x: this.x, y: this.y});
+        if(this.trail.length > 10) this.trail.shift();
+        
         this.y -= this.speed * speed;
         if(this.y <= this.targetY){
             explode(this.x,this.y,this.color);
@@ -172,10 +290,27 @@ class Firework{
         return true;
     }
     draw(){
+        // Draw trail
+        this.trail.forEach((pos, i) => {
+            ctx.globalAlpha = i / this.trail.length * 0.5;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 2, 0, Math.PI*2);
+            ctx.fill();
+        });
+        
+        // Draw main firework
+        ctx.globalAlpha = 1;
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x,this.y,3,0,Math.PI*2);
         ctx.fill();
+        
+        // Glow effect
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.fill();
+        ctx.shadowBlur = 0;
     }
 }
 
@@ -188,10 +323,12 @@ class Particle{
         this.speed = Math.random() * 6 + 2;
         this.alpha = 1;
         this.size = Math.random() * 3 + 1;
+        this.friction = 0.98;
     }
     update(){
         this.x += Math.cos(this.angle) * this.speed * speed;
         this.y += Math.sin(this.angle) * this.speed * speed + gravity * 20;
+        this.speed *= this.friction;
         this.alpha -= 0.015;
         return this.alpha > 0;
     }
@@ -201,39 +338,71 @@ class Particle{
         ctx.beginPath();
         ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
         ctx.fill();
+        
+        // Add sparkle
+        if(Math.random() > 0.95){
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = this.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        
         ctx.globalAlpha = 1;
     }
 }
 
 function explode(x,y,color){
-    playSound(); // 🔊 SOUND HERE
-    for(let i=0;i<120;i++){
+    playExplosionSound();
+    
+    // More particles for bigger explosion
+    const particleCount = Math.floor(Math.random() * 50) + 120;
+    
+    for(let i=0;i<particleCount;i++){
         particles.push(new Particle(x,y,color));
+    }
+    
+    // Add extra bright particles
+    for(let i=0;i<20;i++){
+        const brightColor = `hsl(${Math.random()*60 + (parseInt(color.match(/\d+/)[0]) - 30)},100%,80%)`;
+        particles.push(new Particle(x,y,brightColor));
     }
 }
 
-function launch(){ fireworks.push(new Firework()); }
-function launchBurst(c=4){ for(let i=0;i<c;i++) fireworks.push(new Firework()); }
-
-function toggle(){ running=!running; if(running) animate(); }
-function speedUp(){ speed=Math.min(speed+0.3,3); }
-function slowDown(){ speed=Math.max(speed-0.3,0.4); }
-function resetAll(){ fireworks=[]; particles=[]; speed=1; }
-
 function animate(){
-    if(!running) return;
-
-    ctx.fillStyle="rgba(0,0,0,0.25)";
+    ctx.fillStyle="rgba(0,0,0,0.18)";
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    if(Math.random()<0.12) launch();
-    if(Math.random()<0.02) launchBurst(4);
+    // Continuous launches - very frequent for full screen effect
+    if(Math.random()<0.18) {
+        playLaunchSound();
+        fireworks.push(new Firework());
+    }
+    
+    // Mega bursts occasionally
+    if(Math.random()<0.04) {
+        const burstCount = Math.floor(Math.random() * 3) + 5;
+        for(let i=0;i<burstCount;i++){
+            setTimeout(() => {
+                playLaunchSound();
+                fireworks.push(new Firework());
+            }, i * 40);
+        }
+    }
+    
+    // Special synchronized bursts
+    if(Math.random()<0.01) {
+        for(let i=0;i<3;i++){
+            playLaunchSound();
+            fireworks.push(new Firework());
+        }
+    }
 
     fireworks = fireworks.filter(f=>{ f.draw(); return f.update(); });
     particles = particles.filter(p=>{ p.draw(); return p.update(); });
 
     requestAnimationFrame(animate);
 }
+
 animate();
 </script>
 
